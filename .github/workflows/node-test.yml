@@ -3,16 +3,17 @@ name: Node.js CI
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  pull_request_review:
+    types: [submitted]
 
 jobs:
   test:
+    if: github.event.review.state == 'approved'
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        node-version: [14.x, 16.x, 18.x]
+        node-version: [22.x]
 
     steps:
     - uses: actions/checkout@v3
@@ -20,4 +21,5 @@ jobs:
       uses: actions/setup-node@v3
       with:
         node-version: ${{ matrix.node-version }}
+    - run: npm ci
     - run: npm test
