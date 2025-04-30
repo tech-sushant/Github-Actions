@@ -1,0 +1,53 @@
+name: Create GitHub Release with Standard Versioning
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'  # Trigger on tags like v1.2.0
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16.x'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Bump version using standard-version
+        run: |
+          # Generate changelog, bump version based on commit messages
+          npx standard-version
+
+      - name: Commit version bump and changelog
+        run: |
+          git add package.json package-lock.json CHANGELOG.md
+          git commit -m "chore(release): version bump"
+          git tag v$(node -p -e "require('./package.json').version")
+
+      - name: Push changes and tags
+        run: |
+          git push origin main --tags
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ./dist/*  # Attach compiled files or binaries
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish Release Notes
+        run: |
+          echo "Release version ${GITHUB_REF} created"
