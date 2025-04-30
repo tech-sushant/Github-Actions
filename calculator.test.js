@@ -1,4 +1,4 @@
-const { add, subtract, multiply, divide } = require('./calculator');
+const { add, subtract, multiply, divide, cmodulas, power } = require('./calculator');
 
 describe('Calculator', () => {
     test('adds two numbers correctly', () => {
@@ -24,4 +24,13 @@ describe('Calculator', () => {
     test('throws error when dividing by zero', () => {
         expect(() => divide(4, 0)).toThrow('Division by zero is not allowed');
     });
+
+    test('modulas two numbers correctly', () => {
+        expect(modulas(5, 2)).toBe(1);
+    });
+
+    test('power of two numbers correctly', () => {
+        expect(power(2, 3)).toBe(8);
+    });
+
 });
