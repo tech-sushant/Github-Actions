@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write  # Required to push changes
 
 jobs:
   publish:
@@ -27,13 +27,16 @@ jobs:
       - name: "Clean untracked files"
         run: git clean -fdx
 
+      - name: "Set Git user name and email"
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
       - name: "Bump patch version"
         run: npm version patch
 
       - name: "Push version bump commit and tag"
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
           git push origin HEAD
           git push origin --tags
 
