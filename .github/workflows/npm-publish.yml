@@ -30,11 +30,14 @@ jobs:
       - name: "Build package"
         run: npm run build
 
-      - name: "Set Git user"
+      - name: "Set Git user name and email"
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
+      - name: "Clean working directory"
+        run: git clean -fdx
+      
       - name: "Bump patch version"
         run: npm version patch
 
@@ -42,7 +45,7 @@ jobs:
         id: get_version
         run: echo "version=v$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
-      - name: "Push commit and tags"
+      - name: "Push version bump commit and tag"
         run: |
           git push origin HEAD
           git push origin --tags
