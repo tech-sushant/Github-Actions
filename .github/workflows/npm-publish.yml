@@ -3,13 +3,14 @@ name: "Release New Version"
 on:
   workflow_dispatch:
     inputs:
-      release_title:
-        description: 'Title for the release'
-        required: true
-      release_body:
-        description: 'Content for the release notes'
-        required: true
-        default: ''
+      title:
+        description: "Release title"
+        required: false
+        default: ""
+      body:
+        description: "Release notes (optional)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -32,30 +33,12 @@ jobs:
       - name: "Install dependencies"
         run: npm ci
 
-      - name: "Run tests"
-        run: npm test
+      - name: "Create build"
+        run: npm run build
 
       - name: "Get version from package.json"
         id: get_version
-        run: echo "version=v$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-
-      - name: "Set release title and body"
-        id: set_release_info
-        run: |
-          VERSION=${{ steps.get_version.outputs.version }}
-          TITLE="${{ github.event.inputs.release_title }}"
-          BODY="${{ github.event.inputs.release_body }}"
-
-          if [ -z "$TITLE" ]; then
-            TITLE="Release $VERSION"
-          fi
-
-          if [ -z "$BODY" ]; then
-            BODY="See CHANGELOG.md for details."
-          fi
-
-          echo "title=$TITLE" >> $GITHUB_OUTPUT
-          echo "body=$BODY" >> $GITHUB_OUTPUT
+        run: echo "version=v$(node -p \"require('./package.json').version\")" >> $GITHUB_OUTPUT
 
       - name: "Set Git user name and email"
         run: |
@@ -73,6 +56,54 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: "Get previous tag"
+        id: get_previous_tag
+        run: |
+          git fetch --tags
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^)
+          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+
+      - name: "Extract merged PRs"
+        id: extract_prs
+        run: |
+          PREV_TAG=${{ steps.get_previous_tag.outputs.previous_tag }}
+          CURRENT_TAG=${{ steps.get_version.outputs.version }}
+          echo "Comparing $PREV_TAG to $CURRENT_TAG"
+
+          # List merge commits between the two tags that follow the "Merge pull request" pattern
+          PR_LIST=$(git log $PREV_TAG..$CURRENT_TAG --merges --grep='Merge pull request' --pretty=format:'- %s')
+
+          # If no PRs are found, set a default message
+          if [ -z "$PR_LIST" ]; then
+            PR_LIST="No pull requests merged in this release."
+          fi
+
+          # Save the PR list to an output variable
+          echo "pr_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$PR_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: "Set release info"
+        id: set_release_info
+        run: |
+          TITLE="${{ github.event.inputs.title }}"
+          BODY="${{ github.event.inputs.body }}"
+          VERSION="${{ steps.get_version.outputs.version }}"
+          PRS="${{ steps.extract_prs.outputs.pr_list }}"
+
+          if [ -z "$TITLE" ]; then
+            TITLE="Release $VERSION"
+          fi
+
+          if [ -z "$BODY" ]; then
+            BODY="### Merged Pull Requests\n$PRS"
+          else
+            BODY="$BODY\n\n### Merged Pull Requests\n$PRS"
+          fi
+
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+          echo "body=$BODY" >> $GITHUB_OUTPUT
+
       - name: "Create GitHub Release"
         uses: actions/create-release@v1
         with:
@@ -81,6 +112,6 @@ jobs:
           body: |
             ${{ steps.set_release_info.outputs.body }}
 
-            • Published by ${{ github.actor }}
+            Published by ${{ github.actor }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
