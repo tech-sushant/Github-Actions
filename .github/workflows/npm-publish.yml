@@ -62,17 +62,45 @@ jobs:
         id: get_previous_tag
         run: |
           git fetch --tags
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^)
-          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+
+          CURRENT_TAG=${{ steps.get_version.outputs.version }}
+          TAGS=$(git tag --sort=-creatordate)
+
+          PREV_TAG=""
+          FOUND_CURRENT=0
+          for tag in $TAGS; do
+            if [ "$FOUND_CURRENT" = "1" ]; then
+              PREV_TAG=$tag
+              break
+            fi
+            if [ "$tag" = "$CURRENT_TAG" ]; then
+              FOUND_CURRENT=1
+            fi
+          done
+
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found."
+            echo "previous_tag=" >> $GITHUB_OUTPUT
+          else
+            echo "Found previous tag: $PREV_TAG"
+            echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          fi
 
       - name: "Extract merged PRs"
         id: extract_prs
         run: |
-          PREV_TAG=${{ steps.get_previous_tag.outputs.previous_tag }}
-          CURRENT_TAG=${{ steps.get_version.outputs.version }}
-          echo "Comparing $PREV_TAG to $CURRENT_TAG"
+          PREV_TAG="${{ steps.get_previous_tag.outputs.previous_tag }}"
+          CURRENT_TAG="${{ steps.get_version.outputs.version }}"
 
-          PR_LIST=$(git log "$PREV_TAG..$CURRENT_TAG" --merges --grep='Merge pull request' --pretty=format:'- %s')
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="$CURRENT_TAG"
+          else
+            RANGE="$PREV_TAG..$CURRENT_TAG"
+          fi
+
+          echo "Checking PRs in range: $RANGE"
+
+          PR_LIST=$(git log "$RANGE" --merges --grep='Merge pull request' --pretty=format:'- %s')
 
           if [ -z "$PR_LIST" ]; then
             PR_LIST="No pull requests merged in this release."
