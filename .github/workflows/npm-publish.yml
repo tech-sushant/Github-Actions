@@ -5,11 +5,10 @@ on:
     inputs:
       release_title:
         description: 'Title for the release'
-        required: false
-        default: ''
+        required: true
       release_body:
         description: 'Content for the release notes'
-        required: false
+        required: true
         default: ''
 
 permissions:
