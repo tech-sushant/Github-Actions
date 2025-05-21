@@ -63,26 +63,13 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: "Get Merged Pull Requests"
-        id: get_merged_prs
-        uses: VanOns/get-merged-pull-requests-action@v1
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          repo: ${{ github.repository }}
-          current_tag: ${{ steps.version_info.outputs.current }}
-          previous_tag: ${{ steps.version_info.outputs.previous }}
-          return_type: title_only
-
       - name: "Create GitHub Release"
         uses: actions/create-release@v1
         with:
           tag_name: ${{ steps.version_info.outputs.current }}
           release_name: ${{ github.event.inputs.release_title }}
           body: |
-            **Merged Pull Requests:**
-            ${{ steps.get_merged_prs.outputs.pull_requests }}
-
-            **Full Changelog:** https://github.com/${{ github.repository }}/compare/${{ steps.version_info.outputs.previous }}...${{ steps.version_info.outputs.current }}
+            **Full Changelog:** https://github.com/tech-sushant/Github-Actions/compare/${{ steps.version_info.outputs.previous }}...${{ steps.version_info.outputs.current }}
 
             ${{ github.event.inputs.release_body }}
 
