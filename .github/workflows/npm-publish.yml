@@ -38,7 +38,9 @@ jobs:
 
       - name: "Get version from package.json"
         id: get_version
-        run: echo "version=v$(node -p \"require('./package.json').version\")" >> $GITHUB_OUTPUT
+        run: |
+          VERSION="v$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: "Set Git user name and email"
         run: |
@@ -70,15 +72,12 @@ jobs:
           CURRENT_TAG=${{ steps.get_version.outputs.version }}
           echo "Comparing $PREV_TAG to $CURRENT_TAG"
 
-          # List merge commits between the two tags that follow the "Merge pull request" pattern
-          PR_LIST=$(git log $PREV_TAG..$CURRENT_TAG --merges --grep='Merge pull request' --pretty=format:'- %s')
+          PR_LIST=$(git log "$PREV_TAG..$CURRENT_TAG" --merges --grep='Merge pull request' --pretty=format:'- %s')
 
-          # If no PRs are found, set a default message
           if [ -z "$PR_LIST" ]; then
             PR_LIST="No pull requests merged in this release."
           fi
 
-          # Save the PR list to an output variable
           echo "pr_list<<EOF" >> $GITHUB_OUTPUT
           echo "$PR_LIST" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
