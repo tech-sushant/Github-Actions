@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       release_title:
-        description: 'Title for the release'
+        description: "Title for the release"
         required: true
       release_body:
-        description: 'Content for the release notes'
-        required: true
-        default: ''
+        description: "Content for the release notes"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -38,26 +38,31 @@ jobs:
       - name: "Get version from package.json"
         id: get_version
         run: |
-          VERSION="v$(node -p \"require('./package.json').version\")"
+          VERSION="v$(node -p 'require("./package.json").version')"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: "Get Previous Tag"
-        id: previous_tag
+      - name: "Get previous tag"
+        id: get_previous_tag
         run: |
           git fetch --tags
-          CURRENT=${{ steps.get_version.outputs.version }}
-          PREVIOUS=$(git tag --sort=-creatordate | grep -v "$CURRENT" | head -n 1 || echo "")
-          echo "previous=$PREVIOUS" >> $GITHUB_OUTPUT
+          CURRENT_TAG=${{ steps.get_version.outputs.version }}
+          PREVIOUS_TAG=$(git tag --sort=-creatordate | grep -v "$CURRENT_TAG" | head -n 1)
+          echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
 
       - name: "Set release title and body"
         id: set_release_info
         run: |
           TITLE="${{ github.event.inputs.release_title }}"
           BODY="${{ github.event.inputs.release_body }}"
-          CHANGELOG="Full Changelog: https://github.com/${{ github.repository }}/compare/${{ steps.previous_tag.outputs.previous }}...${{ steps.get_version.outputs.version }}"
+          CURRENT_TAG="${{ steps.get_version.outputs.version }}"
+          PREVIOUS_TAG="${{ steps.get_previous_tag.outputs.previous_tag }}"
+
+          CHANGELOG_LINK="**Full Changelog:** https://github.com/${{ github.repository }}/compare/$PREVIOUS_TAG...$CURRENT_TAG"
+
+          FULL_BODY="$BODY"$'\n\n'"$CHANGELOG_LINK"$'\n\n'"Published by ${{ github.actor }}"
 
           echo "title=$TITLE" >> $GITHUB_OUTPUT
-          echo "body=$BODY\n\n$CHANGELOG\n\nPublished by ${{ github.actor }}" >> $GITHUB_OUTPUT
+          echo "body=$FULL_BODY" >> $GITHUB_OUTPUT
 
       - name: "Set Git user name and email"
         run: |
