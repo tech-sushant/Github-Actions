@@ -7,7 +7,7 @@ on:
         description: 'Title for the release'
         required: true
       release_body:
-        description: 'Content for the release notes'
+        description: 'Additional release notes'
         required: false
         default: ''
 
@@ -16,14 +16,12 @@ permissions:
 
 jobs:
   publish:
-    name: "Publish to NPM and GitHub Release"
+    name: "Publish to NPM"
     runs-on: ubuntu-latest
 
     steps:
       - name: "Checkout source code"
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0  # Required to fetch all tags
+        uses: actions/checkout@v2
 
       - name: "Set up Node.js"
         uses: actions/setup-node@v3
@@ -34,60 +32,47 @@ jobs:
       - name: "Install dependencies"
         run: npm ci
 
-      - name: "Create build"
+      - name: "Build project"
         run: npm run build
 
-      - name: "Get current version from package.json"
-        id: get_version
-        run: |
-          echo "version=v$(node -p 'require("./package.json").version')" >> $GITHUB_OUTPUT
+      - name: "Fetch tags"
+        run: git fetch --tags
 
-      - name: "Get previous version tag"
-        id: get_previous_tag
+      - name: "Get version info"
+        id: version_info
         run: |
-          git fetch --tags
-          PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "${{ steps.get_version.outputs.version }}" | head -n 1)
-          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          CURRENT_TAG="v$(node -p "require('./package.json').version")"
+          PREVIOUS_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "$CURRENT_TAG" | head -n 1 || echo "")
 
-      - name: "Set Git user"
+          echo "current=$CURRENT_TAG" >> $GITHUB_OUTPUT
+          echo "previous=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+
+      - name: "Configure Git"
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
       - name: "Create Git tag"
-        run: git tag ${{ steps.get_version.outputs.version }}
+        run: git tag ${{ steps.version_info.outputs.current }}
 
-      - name: "Push tag to origin"
-        run: git push origin ${{ steps.get_version.outputs.version }}
+      - name: "Push tag"
+        run: git push origin ${{ steps.version_info.outputs.current }}
 
       - name: "Publish to NPM"
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: "Set release info"
-        id: set_release_info
-        run: |
-          TITLE="${{ github.event.inputs.release_title }}"
-          BODY="${{ github.event.inputs.release_body }}"
-          VERSION="${{ steps.get_version.outputs.version }}"
-          PREV_TAG="${{ steps.get_previous_tag.outputs.previous_tag }}"
-
-          if [ -n "$PREV_TAG" ]; then
-            CHANGELOG_LINK="**Full Changelog:** https://github.com/${{ github.repository }}/compare/$PREV_TAG...$VERSION"
-            BODY="$BODY"$'\n\n'"$CHANGELOG_LINK"
-          fi
-
-          BODY="$BODY"$'\n\n'"Published by ${{ github.actor }}"
-
-          echo "title=$TITLE" >> $GITHUB_OUTPUT
-          echo "body=$BODY" >> $GITHUB_OUTPUT
-
       - name: "Create GitHub Release"
         uses: actions/create-release@v1
         with:
-          tag_name: ${{ steps.get_version.outputs.version }}
-          release_name: ${{ steps.set_release_info.outputs.title }}
-          body: ${{ steps.set_release_info.outputs.body }}
+          tag_name: ${{ steps.version_info.outputs.current }}
+          release_name: ${{ github.event.inputs.release_title }}
+          body: |
+            **Full Changelog:** https://github.com/tech-sushant/Github-Actions/compare/${{ steps.version_info.outputs.previous }}...${{ steps.version_info.outputs.current }}
+
+            ${{ github.event.inputs.release_body }}
+
+            Published by ${{ github.actor }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
