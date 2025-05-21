@@ -39,8 +39,8 @@ jobs:
       - name: "Get version from package.json"
         id: get_version
         run: |
-          VERSION="v$(node -p \"require('./package.json').version\")"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=v$VERSION" >> $GITHUB_OUTPUT
 
       - name: "Set Git user name and email"
         run: |
@@ -63,7 +63,7 @@ jobs:
         run: |
           git fetch --tags
 
-          CURRENT_TAG=${{ steps.get_version.outputs.version }}
+          CURRENT_TAG="${{ steps.get_version.outputs.version }}"
           TAGS=$(git tag --sort=-creatordate)
 
           PREV_TAG=""
@@ -78,9 +78,15 @@ jobs:
             fi
           done
 
-          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous tag found."
+            echo "previous_tag=" >> $GITHUB_OUTPUT
+          else
+            echo "Found previous tag: $PREV_TAG"
+            echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          fi
 
-      - name: "Extract merged PRs from commits"
+      - name: "Extract merged PRs"
         id: extract_prs
         run: |
           PREV_TAG="${{ steps.get_previous_tag.outputs.previous_tag }}"
@@ -92,9 +98,9 @@ jobs:
             RANGE="$PREV_TAG..$CURRENT_TAG"
           fi
 
-          echo "Commit range: $RANGE"
+          echo "Checking PRs in range: $RANGE"
 
-          PR_LIST=$(git log "$RANGE" --pretty=format:"%s" | grep -Eo '.*\(#([0-9]+)\)' | sed 's/^/- /')
+          PR_LIST=$(git log "$RANGE" --merges --grep='Merge pull request' --pretty=format:'- %s')
 
           if [ -z "$PR_LIST" ]; then
             PR_LIST="No pull requests merged in this release."
