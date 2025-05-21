@@ -8,7 +8,7 @@ on:
         required: true
       release_body:
         description: "Content for the release notes"
-        required: false
+        required: true
         default: ""
 
 permissions:
@@ -37,17 +37,28 @@ jobs:
 
       - name: "Get version from package.json"
         id: get_version
-        run: |
-          VERSION="v$(node -p 'require("./package.json").version')"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        run: echo "version=v$(node -p 'require(\"./package.json\").version')" >> $GITHUB_OUTPUT
 
       - name: "Get previous tag"
         id: get_previous_tag
         run: |
           git fetch --tags
           CURRENT_TAG=${{ steps.get_version.outputs.version }}
-          PREVIOUS_TAG=$(git tag --sort=-creatordate | grep -v "$CURRENT_TAG" | head -n 1)
-          echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+          TAGS=$(git tag --sort=-creatordate)
+
+          PREV_TAG=""
+          FOUND_CURRENT=0
+          for tag in $TAGS; do
+            if [ "$FOUND_CURRENT" = "1" ]; then
+              PREV_TAG=$tag
+              break
+            fi
+            if [ "$tag" = "$CURRENT_TAG" ]; then
+              FOUND_CURRENT=1
+            fi
+          done
+
+          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
 
       - name: "Set release title and body"
         id: set_release_info
@@ -58,11 +69,12 @@ jobs:
           PREVIOUS_TAG="${{ steps.get_previous_tag.outputs.previous_tag }}"
 
           CHANGELOG_LINK="**Full Changelog:** https://github.com/${{ github.repository }}/compare/$PREVIOUS_TAG...$CURRENT_TAG"
-
           FULL_BODY="$BODY"$'\n\n'"$CHANGELOG_LINK"$'\n\n'"Published by ${{ github.actor }}"
 
           echo "title=$TITLE" >> $GITHUB_OUTPUT
-          echo "body=$FULL_BODY" >> $GITHUB_OUTPUT
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$FULL_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: "Set Git user name and email"
         run: |
