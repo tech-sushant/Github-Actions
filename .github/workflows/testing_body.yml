@@ -12,9 +12,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up GitHub CLI
-        uses: cli/cli-action@v1
-
       - name: Preview Release Body
         shell: bash
         env:
