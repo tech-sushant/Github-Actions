@@ -105,6 +105,8 @@ jobs:
             ### Merged Pull Requests
             ${{ steps.fetch_prs.outputs.pr_list }}
 
+            ```
             Published by ${{ github.actor }}
+            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
