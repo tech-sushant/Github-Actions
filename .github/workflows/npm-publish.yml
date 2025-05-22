@@ -7,7 +7,7 @@ on:
         description: "Title for the release"
         required: true
       release_body:
-        description: "Additional notes (optional)"
+        description: "Optional notes for the release"
         required: false
         default: ""
 
@@ -22,7 +22,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
-          fetch-depth: 0  # Ensure all tags and commit history
+          fetch-depth: 0  # Required to access all tags
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -45,25 +45,26 @@ jobs:
       - name: Get previous tag
         id: get_previous_tag
         run: |
-          PREV=$(git tag --sort=-creatordate | grep '^v' | grep -v "${{ steps.get_version.outputs.version }}" | head -n 1)
-          echo "previous_tag=$PREV" >> $GITHUB_OUTPUT
+          TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "${{ steps.get_version.outputs.version }}" | head -n 1)
+          echo "previous_tag=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Fetch merged PRs between tags
+      - name: Fetch merged PRs
         id: fetch_prs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PREVIOUS_TAG=${{ steps.get_previous_tag.outputs.previous_tag }}
-          CURRENT_TAG=${{ steps.get_version.outputs.version }}
 
           if [ -z "$PREVIOUS_TAG" ]; then
-            echo "pr_list=No previous tag available." >> $GITHUB_OUTPUT
+            echo "pr_list=No previous tag found, cannot compare PRs." >> $GITHUB_OUTPUT
             exit 0
           fi
 
           PREVIOUS_SHA=$(git rev-list -n 1 $PREVIOUS_TAG)
-          CURRENT_SHA=$(git rev-list -n 1 $CURRENT_TAG)
-
           PREVIOUS_DATE=$(git show -s --format=%cI $PREVIOUS_SHA)
-          CURRENT_DATE=$(git show -s --format=%cI $CURRENT_SHA)
+          CURRENT_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "Comparing merged PRs from $PREVIOUS_DATE to $CURRENT_DATE"
 
           PR_LIST=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" --json number,title,url --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
 
@@ -74,8 +75,6 @@ jobs:
           echo "pr_list<<EOF" >> $GITHUB_OUTPUT
           echo "$PR_LIST" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set Git user
         run: |
@@ -85,7 +84,7 @@ jobs:
       - name: Create Git tag
         run: git tag ${{ steps.get_version.outputs.version }}
 
-      - name: Push tag to origin
+      - name: Push tag
         run: git push origin ${{ steps.get_version.outputs.version }}
 
       - name: Publish to NPM
@@ -99,9 +98,10 @@ jobs:
           tag_name: ${{ steps.get_version.outputs.version }}
           release_name: ${{ github.event.inputs.release_title }}
           body: |
-            ${{ steps.fetch_prs.outputs.pr_list }}
-
             ${{ github.event.inputs.release_body }}
+
+            ### Merged Pull Requests
+            ${{ steps.fetch_prs.outputs.pr_list }}
 
             Published by ${{ github.actor }}
         env:
