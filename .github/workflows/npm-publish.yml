@@ -4,87 +4,92 @@ on:
   workflow_dispatch:
     inputs:
       release_title:
-        description: 'Title for the release'
+        description: "Title for the release"
         required: true
       release_body:
-        description: 'Optional extra notes (PRs will be auto-listed)'
+        description: "Additional description (optional)"
         required: false
-        default: ''
+        default: ""
 
 permissions:
   contents: write
 
 jobs:
   publish:
-    name: "Publish to NPM"
     runs-on: ubuntu-latest
 
     steps:
-      - name: "Checkout source code"
+      - name: Checkout code
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # Important to fetch all tags!
 
-      - name: "Set up Node.js"
+      - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 22.x
           registry-url: "https://registry.npmjs.org/"
 
-      - name: "Install dependencies"
+      - name: Install dependencies
         run: npm ci
 
-      - name: "Create build"
+      - name: Build project
         run: npm run build
 
-      - name: "Get version from package.json"
+      - name: Get current version from package.json
         id: get_version
         run: |
-          VERSION="v$(node -p 'require("./package.json").version')"
+          VERSION="v$(node -p "require('./package.json').version")"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: "Set Git user name and email"
+      - name: Get previous tag
+        id: tags
+        run: |
+          TAGS=($(git tag --sort=-creatordate | head -n 2))
+          if [ "${#TAGS[@]}" -lt 2 ]; then
+            echo "No previous tag found"
+            echo "previous_tag=" >> $GITHUB_OUTPUT
+          else
+            echo "previous_tag=${TAGS[1]}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fetch merged PRs between tags
+        id: pr_list
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          PREV="${{ steps.tags.outputs.previous_tag }}"
+
+          if [ -z "$PREV" ]; then
+            echo "No previous tag found to compare PRs."
+            echo "prs_output=No previous tag available to list PRs." >> $GITHUB_OUTPUT
+          else
+            PR_LIST=$(gh pr list --state merged --search "$PREV..$VERSION" --json title,number --jq '.[] | "- PR #" + (.number|tostring) + ": " + .title')
+            if [ -z "$PR_LIST" ]; then
+              echo "prs_output=No PRs were merged in this release." >> $GITHUB_OUTPUT
+            else
+              echo "prs_output=$PR_LIST" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Set Git user
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
-      - name: "Create Git tag for version"
+      - name: Create Git tag
         run: git tag ${{ steps.get_version.outputs.version }}
 
-      - name: "Push tag to origin"
+      - name: Push tag to origin
         run: git push origin ${{ steps.get_version.outputs.version }}
 
-      - name: "Publish to NPM"
+      - name: Publish to NPM
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: "Get previous Git tag"
-        id: get_previous_tag
-        run: |
-          PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "${{ steps.get_version.outputs.version }}" | head -n 1)
-          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
-
-      - name: "Get merged pull requests"
-        id: get_prs
-        run: |
-          CURRENT_TAG=${{ steps.get_version.outputs.version }}
-          PREVIOUS_TAG=${{ steps.get_previous_tag.outputs.previous_tag }}
-
-          if [ -z "$PREVIOUS_TAG" ]; then
-            echo "No previous tag found. Skipping PR listing."
-            echo "prs=No previous tag found to compare PRs." >> $GITHUB_OUTPUT
-          else
-            PR_LIST=$(gh pr list --state merged --search "$PREVIOUS_TAG..$CURRENT_TAG" --json title,url --jq '.[] | "* " + .title + " - " + .url')
-            if [ -z "$PR_LIST" ]; then
-              echo "No merged pull requests found."
-              echo "prs=No merged pull requests between $PREVIOUS_TAG and $CURRENT_TAG." >> $GITHUB_OUTPUT
-            else
-              echo "prs<<EOF" >> $GITHUB_OUTPUT
-              echo "$PR_LIST" >> $GITHUB_OUTPUT
-              echo "EOF" >> $GITHUB_OUTPUT
-            fi
-          fi
-
-      - name: "Create GitHub Release"
+      - name: Create GitHub Release
         uses: actions/create-release@v1
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
@@ -92,8 +97,8 @@ jobs:
           body: |
             ${{ steps.github.event.inputs.release_body }}
 
-            ### Merged Pull Requests
-            ${{ steps.get_prs.outputs.prs }}
+            **Merged Pull Requests:**
+            ${{ steps.pr_list.outputs.prs_output }}
 
             Published by ${{ github.actor }}
         env:
