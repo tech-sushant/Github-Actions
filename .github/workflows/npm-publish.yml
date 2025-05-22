@@ -1,5 +1,4 @@
 name: "Release New Version"
-
 on:
   workflow_dispatch:
     inputs:
@@ -10,109 +9,111 @@ on:
         description: "Additional notes (optional)"
         required: false
         default: ""
-
 permissions:
   contents: write
-
 jobs:
   publish:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
           fetch-depth: 0  # Required for full tag history
-
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 22.x
           registry-url: "https://registry.npmjs.org/"
-
       - name: Install dependencies
         run: npm ci
-
       - name: Build project
         run: npm run build
-
       - name: Get current version from package.json
         id: get_version
         run: |
           VERSION="v$(node -p 'require("./package.json").version')"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-
       - name: Get previous Git tag
         id: get_previous_tag
         run: |
           PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "${{ steps.get_version.outputs.version }}" | head -n 1)
           echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
-
       - name: Fetch and categorize merged PRs
         id: fetch_prs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PREVIOUS_TAG=${{ steps.get_previous_tag.outputs.previous_tag }}
-
           if [ -z "$PREVIOUS_TAG" ]; then
             echo "pr_list=No previous tag found to compare PRs." >> $GITHUB_OUTPUT
             exit 0
           fi
-
+          
           PREVIOUS_SHA=$(git rev-list -n 1 $PREVIOUS_TAG)
           PREVIOUS_DATE=$(git show -s --format=%cI $PREVIOUS_SHA)
           CURRENT_DATE=$(git show -s --format=%cI HEAD)
-
           echo "Fetching PRs merged between $PREVIOUS_DATE and $CURRENT_DATE"
-
+          
+          # Initialize variables
           ADDED=""
           FIXED=""
-
+          
+          # Fetch PRs
           PRS=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" \
             --json number,title,url,mergedAt \
             --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
-
+          
+          # Check if any PRs were found
+          if [ -z "$PRS" ]; then
+            echo "pr_list=No pull requests were merged during this release." >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Process each PR
           while IFS= read -r pr; do
-            title=$(echo "$pr" | cut -d']' -f2 | cut -d':' -f2- | xargs)
-            if [[ "$title" == fix* ]]; then
-              FIXED+="$pr"$'\n'
-            else
-              ADDED+="$pr"$'\n'
+            if [ -n "$pr" ]; then
+              # Extract title after the closing bracket and URL
+              title=$(echo "$pr" | cut -d']' -f2- | sed 's/^ *//')
+              
+              # Check if it's a fix-related PR
+              if echo "$title" | grep -qi "^fix"; then
+                FIXED="$FIXED$pr"$'\n'
+              else
+                ADDED="$ADDED$pr"$'\n'
+              fi
             fi
           done <<< "$PRS"
-
+          
+          # Build the body
           BODY=""
-          if [ -n "$ADDED" ]; then
-            BODY+="### Added"$'\n'"$ADDED"$'\n'
+          if [ -n "$ADDED" ] && [ "$ADDED" != $'\n' ]; then
+            BODY="$BODY### Added"$'\n'"$ADDED"$'\n'
           fi
-          if [ -n "$FIXED" ]; then
-            BODY+="### Fixed"$'\n'"$FIXED"$'\n'
+          if [ -n "$FIXED" ] && [ "$FIXED" != $'\n' ]; then
+            BODY="$BODY### Fixed"$'\n'"$FIXED"$'\n'
           fi
+          
+          # If no categorized content, show message
           if [ -z "$BODY" ]; then
-            BODY="No pull requests were merged in this release."
+            BODY="No pull requests were merged during this release."
           fi
-
+          
+          # Output the result
           echo "pr_list<<EOF" >> $GITHUB_OUTPUT
           echo "$BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-
       - name: Set Git identity
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-
       - name: Create Git tag
         run: git tag ${{ steps.get_version.outputs.version }}
-
       - name: Push Git tag
         run: git push origin ${{ steps.get_version.outputs.version }}
-
       - name: Publish to NPM
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Create GitHub Release
         uses: actions/create-release@v1
         with:
@@ -120,9 +121,9 @@ jobs:
           release_name: ${{ github.event.inputs.release_title }}
           body: |
             ${{ github.event.inputs.release_body }}
-
+            
             ${{ steps.fetch_prs.outputs.pr_list }}
-
+            
             Published by ${{ github.actor }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
