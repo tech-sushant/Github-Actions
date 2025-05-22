@@ -22,7 +22,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
-          fetch-depth: 0  # Ensure full history and tags are available
+          fetch-depth: 0  # Required for full tag history
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -48,7 +48,7 @@ jobs:
           PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "${{ steps.get_version.outputs.version }}" | head -n 1)
           echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
 
-      - name: Fetch merged PRs between previous tag and HEAD
+      - name: Fetch and categorize merged PRs
         id: fetch_prs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -64,18 +64,37 @@ jobs:
           PREVIOUS_DATE=$(git show -s --format=%cI $PREVIOUS_SHA)
           CURRENT_DATE=$(git show -s --format=%cI HEAD)
 
-          echo "Comparing PRs merged from $PREVIOUS_DATE to $CURRENT_DATE"
+          echo "Fetching PRs merged between $PREVIOUS_DATE and $CURRENT_DATE"
 
-          PR_LIST=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" \
-            --json number,title,url \
+          ADDED=""
+          FIXED=""
+
+          PRS=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" \
+            --json number,title,url,mergedAt \
             --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
 
-          if [ -z "$PR_LIST" ]; then
-            PR_LIST="No pull requests were merged in this release."
+          while IFS= read -r pr; do
+            title=$(echo "$pr" | cut -d']' -f2 | cut -d':' -f2- | xargs)
+            if [[ "$title" == fix* ]]; then
+              FIXED+="$pr"$'\n'
+            else
+              ADDED+="$pr"$'\n'
+            fi
+          done <<< "$PRS"
+
+          BODY=""
+          if [ -n "$ADDED" ]; then
+            BODY+="### Added"$'\n'"$ADDED"$'\n'
+          fi
+          if [ -n "$FIXED" ]; then
+            BODY+="### Fixed"$'\n'"$FIXED"$'\n'
+          fi
+          if [ -z "$BODY" ]; then
+            BODY="No pull requests were merged in this release."
           fi
 
           echo "pr_list<<EOF" >> $GITHUB_OUTPUT
-          echo "$PR_LIST" >> $GITHUB_OUTPUT
+          echo "$BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Set Git identity
@@ -102,11 +121,8 @@ jobs:
           body: |
             ${{ github.event.inputs.release_body }}
 
-            ### Merged Pull Requests
             ${{ steps.fetch_prs.outputs.pr_list }}
 
-            ```
             Published by ${{ github.actor }}
-            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
