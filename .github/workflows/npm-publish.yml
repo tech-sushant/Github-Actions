@@ -42,11 +42,13 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
 
-      - name: Get previous Git tag
-        id: get_previous_tag
-        run: |
-          PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "${{ steps.get_version.outputs.version }}" | head -n 1)
-          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          - name: Get previous Git tag
+            id: get_previous_tag
+            run: |
+              VERSION="${{ steps.get_version.outputs.version }}"
+              PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "$VERSION" | head -n 1)
+              echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+
 
           - name: Fetch and categorize merged PRs
           id: fetch_prs
