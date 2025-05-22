@@ -94,12 +94,6 @@ jobs:
             BODY="$BODY"$'\n'"### Fixed"$'\n'"$FIXED"
           fi
       
-          # Also include raw list for completeness
-          BODY="$BODY"$'\n\n'"### All Merged Pull Requests"$'\n'"$RAW_PRS"
-      
-          echo "==== Final Release Body ===="
-          echo "$BODY"
-      
           echo "pr_list<<EOF" >> $GITHUB_OUTPUT
           echo "$BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
