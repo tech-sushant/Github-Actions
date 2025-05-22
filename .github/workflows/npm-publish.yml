@@ -64,45 +64,42 @@ jobs:
           PREVIOUS_SHA=$(git rev-list -n 1 $PREVIOUS_TAG)
           PREVIOUS_DATE=$(git show -s --format=%cI $PREVIOUS_SHA)
           CURRENT_DATE=$(git show -s --format=%cI HEAD)
-
-          echo "🔍 Fetching PRs merged between:"
-          echo "   PREVIOUS_DATE: $PREVIOUS_DATE"
-          echo "   CURRENT_DATE:  $CURRENT_DATE"
+          echo "Fetching PRs merged between $PREVIOUS_DATE and $CURRENT_DATE"
 
           PRS=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" \
             --json number,title,url \
             --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
 
-          echo ""
-          echo "🔎 All Fetched PRs:"
-          echo "$PRS"
+          if [ -z "$PRS" ]; then
+            echo "pr_list=No pull requests were merged during this release." >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
           ADDED=""
           FIXED=""
 
           while IFS= read -r pr; do
-            title=$(echo "$pr" | sed 's/.*] //')
-            if echo "$title" | grep -Eqi '^fix:'; then
-              FIXED+="$pr"$'\n'
-            elif echo "$title" | grep -Eqi '^feat:'; then
-              ADDED+="$pr"$'\n'
+            if [ -n "$pr" ]; then
+              # Extract the title removing any extra spaces after the closing bracket
+              title=$(echo "$pr" | sed 's/.*] *//')
+              if echo "$title" | grep -Eqi '^fix:'; then
+                FIXED+="$pr"$'\n'
+              elif echo "$title" | grep -Eqi '^feat:'; then
+                ADDED+="$pr"$'\n'
+              fi
             fi
           done <<< "$PRS"
 
           BODY=""
           if [ -n "$ADDED" ]; then
-            BODY+="### Added"$'\n'"$ADDED"
+            BODY="$BODY### Added"$'\n'"$ADDED"
           fi
           if [ -n "$FIXED" ]; then
-            BODY+=$'\n'"### Fixed"$'\n'"$FIXED"
+            BODY="$BODY"$'\n'"### Fixed"$'\n'"$FIXED"
           fi
           if [ -z "$BODY" ]; then
             BODY="No categorized pull requests found."
           fi
-
-          echo ""
-          echo "✅ Categorized PRs:"
-          echo "$BODY"
 
           echo "pr_list<<EOF" >> $GITHUB_OUTPUT
           echo "$BODY" >> $GITHUB_OUTPUT
