@@ -22,7 +22,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
-          fetch-depth: 0  # required to fetch all tags
+          fetch-depth: 0  # Ensure full history and tags are available
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -42,36 +42,30 @@ jobs:
           VERSION="v$(node -p 'require("./package.json").version')"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Get previous tag
+      - name: Get previous Git tag
         id: get_previous_tag
         run: |
           PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "${{ steps.get_version.outputs.version }}" | head -n 1)
           echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
 
-      - name: Fetch merged PRs between tags
+      - name: Fetch merged PRs between previous tag and HEAD
         id: fetch_prs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PREVIOUS_TAG=${{ steps.get_previous_tag.outputs.previous_tag }}
-          CURRENT_TAG=${{ steps.get_version.outputs.version }}
 
-          if [ -z "$PREVIOUS_TAG" ] || [ -z "$CURRENT_TAG" ]; then
-            echo "pr_list=Could not resolve tag range." >> $GITHUB_OUTPUT
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "pr_list=No previous tag found to compare PRs." >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # Get commit SHAs
           PREVIOUS_SHA=$(git rev-list -n 1 $PREVIOUS_TAG)
-          CURRENT_SHA=$(git rev-list -n 1 $CURRENT_TAG)
-
-          # Get commit dates
           PREVIOUS_DATE=$(git show -s --format=%cI $PREVIOUS_SHA)
-          CURRENT_DATE=$(git show -s --format=%cI $CURRENT_SHA)
+          CURRENT_DATE=$(git show -s --format=%cI HEAD)
 
           echo "Comparing PRs merged from $PREVIOUS_DATE to $CURRENT_DATE"
 
-          # Get merged PRs by date
           PR_LIST=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" \
             --json number,title,url \
             --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
@@ -92,7 +86,7 @@ jobs:
       - name: Create Git tag
         run: git tag ${{ steps.get_version.outputs.version }}
 
-      - name: Push tag
+      - name: Push Git tag
         run: git push origin ${{ steps.get_version.outputs.version }}
 
       - name: Publish to NPM
