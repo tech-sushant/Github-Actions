@@ -7,7 +7,7 @@ on:
         description: "Title for the release"
         required: true
       release_body:
-        description: "Optional notes for the release"
+        description: "Additional notes (optional)"
         required: false
         default: ""
 
@@ -22,7 +22,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
-          fetch-depth: 0  # Required to access all tags
+          fetch-depth: 0  # required to fetch all tags
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -45,28 +45,36 @@ jobs:
       - name: Get previous tag
         id: get_previous_tag
         run: |
-          TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "${{ steps.get_version.outputs.version }}" | head -n 1)
-          echo "previous_tag=$TAG" >> $GITHUB_OUTPUT
+          PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "${{ steps.get_version.outputs.version }}" | head -n 1)
+          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
 
-      - name: Fetch merged PRs
+      - name: Fetch merged PRs between tags
         id: fetch_prs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           PREVIOUS_TAG=${{ steps.get_previous_tag.outputs.previous_tag }}
+          CURRENT_TAG=${{ steps.get_version.outputs.version }}
 
-          if [ -z "$PREVIOUS_TAG" ]; then
-            echo "pr_list=No previous tag found, cannot compare PRs." >> $GITHUB_OUTPUT
+          if [ -z "$PREVIOUS_TAG" ] || [ -z "$CURRENT_TAG" ]; then
+            echo "pr_list=Could not resolve tag range." >> $GITHUB_OUTPUT
             exit 0
           fi
 
+          # Get commit SHAs
           PREVIOUS_SHA=$(git rev-list -n 1 $PREVIOUS_TAG)
+          CURRENT_SHA=$(git rev-list -n 1 $CURRENT_TAG)
+
+          # Get commit dates
           PREVIOUS_DATE=$(git show -s --format=%cI $PREVIOUS_SHA)
-          CURRENT_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          CURRENT_DATE=$(git show -s --format=%cI $CURRENT_SHA)
 
-          echo "Comparing merged PRs from $PREVIOUS_DATE to $CURRENT_DATE"
+          echo "Comparing PRs merged from $PREVIOUS_DATE to $CURRENT_DATE"
 
-          PR_LIST=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" --json number,title,url --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
+          # Get merged PRs by date
+          PR_LIST=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" \
+            --json number,title,url \
+            --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
 
           if [ -z "$PR_LIST" ]; then
             PR_LIST="No pull requests were merged in this release."
@@ -76,7 +84,7 @@ jobs:
           echo "$PR_LIST" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Set Git user
+      - name: Set Git identity
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
