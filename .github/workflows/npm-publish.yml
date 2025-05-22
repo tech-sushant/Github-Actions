@@ -7,7 +7,7 @@ on:
         description: 'Title for the release'
         required: true
       release_body:
-        description: 'Additional release notes'
+        description: 'Content for the release notes'
         required: false
         default: ''
 
@@ -35,73 +35,49 @@ jobs:
       - name: "Build project"
         run: npm run build
 
-      - name: "Fetch tags"
-        run: git fetch --tags
+      - name: "Get current version from package.json"
+        id: get_version
+        run: echo "version=v$(node -p 'require(\"./package.json\").version')" >> $GITHUB_OUTPUT
 
-      - name: "Get version info"
-        id: version_info
+      - name: "Get previous Git tag"
+        id: get_previous_tag
+        run: echo "tag=$(git tag --sort=-creatordate | grep '^v' | sed -n '2p')" >> $GITHUB_OUTPUT
+
+      - name: "Generate release body with merged PRs"
+        id: generate_body
         run: |
-          CURRENT_TAG="v$(node -p "require('./package.json').version")"
-          PREVIOUS_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "$CURRENT_TAG" | head -n 1 || echo "")
+          LAST_TAG=${{ steps.get_previous_tag.outputs.tag }}
+          CURRENT_TAG=${{ steps.get_version.outputs.version }}
 
-          echo "current=$CURRENT_TAG" >> $GITHUB_OUTPUT
-          echo "previous=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+          echo "Comparing $LAST_TAG...$CURRENT_TAG"
 
-      - name: "Configure Git"
+          PR_LIST=$(gh pr list --state merged --search "$LAST_TAG..$CURRENT_TAG" --json title --jq '.[] | "- " + .title')
+          
+          echo "body=**Merged Pull Requests:**%0A$PR_LIST%0A%0A**Full Changelog:** https://github.com/${{ github.repository }}/compare/$LAST_TAG...$CURRENT_TAG" >> $GITHUB_OUTPUT
+
+      - name: "Set Git identity"
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
-      - name: "Create Git tag"
-        run: git tag ${{ steps.version_info.outputs.current }}
+      - name: "Create Git tag for version"
+        run: git tag ${{ steps.get_version.outputs.version }}
 
-      - name: "Push tag"
-        run: git push origin ${{ steps.version_info.outputs.current }}
+      - name: "Push tag to origin"
+        run: git push origin ${{ steps.get_version.outputs.version }}
 
       - name: "Publish to NPM"
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: "Install GitHub CLI"
-        run: sudo apt-get install gh
-
-      - name: "Authenticate GitHub CLI"
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
-
-      - name: "Fetch merged PRs between tags"
-        id: fetch_prs
-        run: |
-          PREVIOUS_TAG=${{ steps.version_info.outputs.previous }}
-          CURRENT_TAG=${{ steps.version_info.outputs.current }}
-
-          # Get the commit SHAs for the tags
-          PREVIOUS_SHA=$(git rev-list -n 1 $PREVIOUS_TAG)
-          CURRENT_SHA=$(git rev-list -n 1 $CURRENT_TAG)
-
-          # Get the merge dates for the tags
-          PREVIOUS_DATE=$(git show -s --format=%cI $PREVIOUS_SHA)
-          CURRENT_DATE=$(git show -s --format=%cI $CURRENT_SHA)
-
-          # Fetch merged PRs between the two dates
-          PR_LIST=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" --json number,title,url --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
-
-          echo "pr_list<<EOF" >> $GITHUB_OUTPUT
-          echo "$PR_LIST" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
       - name: "Create GitHub Release"
         uses: actions/create-release@v1
         with:
-          tag_name: ${{ steps.version_info.outputs.current }}
+          tag_name: ${{ steps.get_version.outputs.version }}
           release_name: ${{ github.event.inputs.release_title }}
           body: |
-            **Merged Pull Requests:**
-            ${{ steps.fetch_prs.outputs.pr_list }}
-
-            **Full Changelog:** https://github.com/${{ github.repository }}/compare/${{ steps.version_info.outputs.previous }}...${{ steps.version_info.outputs.current }}
-
-            ${{ github.event.inputs.release_body }}
+            ${{ steps.generate_body.outputs.body }}
 
             Published by ${{ github.actor }}
         env:
