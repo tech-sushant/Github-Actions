@@ -7,17 +7,16 @@ on:
         description: 'Title for the release'
         required: true
       release_body:
-        description: 'Additional notes (optional)'
+        description: 'Optional extra notes (PRs will be auto-listed)'
         required: false
         default: ''
 
 permissions:
   contents: write
-  pull-requests: read
 
 jobs:
   publish:
-    name: "Publish to NPM and Create Release"
+    name: "Publish to NPM"
     runs-on: ubuntu-latest
 
     steps:
@@ -33,50 +32,57 @@ jobs:
       - name: "Install dependencies"
         run: npm ci
 
-      - name: "Build project"
+      - name: "Create build"
         run: npm run build
 
-      - name: "Get current version from package.json"
+      - name: "Get version from package.json"
         id: get_version
         run: |
-          VERSION="v$(node -p 'require(\"./package.json\").version')"
+          VERSION="v$(node -p 'require("./package.json").version')"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: "Get previous tag"
-        id: previous_tag
-        run: |
-          PREV_TAG=$(git tag --sort=-creatordate | grep -E '^v' | grep -v ${{ steps.get_version.outputs.version }} | head -n 1)
-          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
-
-      - name: "Get merged PRs between tags"
-        id: changelog
-        run: |
-          PRS=$(gh pr list --state merged --search "base:main" --json title,mergeCommit --jq '
-            map(select(.mergeCommit.oid != null)) |
-            map("- " + .title)' || echo "")
-
-          if [ -z "$PRS" ]; then
-            echo "prs=No pull requests were merged for this release." >> $GITHUB_OUTPUT
-          else
-            echo "prs=$PRS" >> $GITHUB_OUTPUT
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: "Set Git user"
+      - name: "Set Git user name and email"
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
-      - name: "Create and push tag"
-        run: |
-          git tag ${{ steps.get_version.outputs.version }}
-          git push origin ${{ steps.get_version.outputs.version }}
+      - name: "Create Git tag for version"
+        run: git tag ${{ steps.get_version.outputs.version }}
+
+      - name: "Push tag to origin"
+        run: git push origin ${{ steps.get_version.outputs.version }}
 
       - name: "Publish to NPM"
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: "Get previous Git tag"
+        id: get_previous_tag
+        run: |
+          PREV_TAG=$(git tag --sort=-creatordate | grep '^v' | grep -v "${{ steps.get_version.outputs.version }}" | head -n 1)
+          echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+
+      - name: "Get merged pull requests"
+        id: get_prs
+        run: |
+          CURRENT_TAG=${{ steps.get_version.outputs.version }}
+          PREVIOUS_TAG=${{ steps.get_previous_tag.outputs.previous_tag }}
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "No previous tag found. Skipping PR listing."
+            echo "prs=No previous tag found to compare PRs." >> $GITHUB_OUTPUT
+          else
+            PR_LIST=$(gh pr list --state merged --search "$PREVIOUS_TAG..$CURRENT_TAG" --json title,url --jq '.[] | "* " + .title + " - " + .url')
+            if [ -z "$PR_LIST" ]; then
+              echo "No merged pull requests found."
+              echo "prs=No merged pull requests between $PREVIOUS_TAG and $CURRENT_TAG." >> $GITHUB_OUTPUT
+            else
+              echo "prs<<EOF" >> $GITHUB_OUTPUT
+              echo "$PR_LIST" >> $GITHUB_OUTPUT
+              echo "EOF" >> $GITHUB_OUTPUT
+            fi
+          fi
 
       - name: "Create GitHub Release"
         uses: actions/create-release@v1
@@ -84,9 +90,10 @@ jobs:
           tag_name: ${{ steps.get_version.outputs.version }}
           release_name: ${{ github.event.inputs.release_title }}
           body: |
-            ${{ steps.changelog.outputs.prs }}
+            ${{ steps.github.event.inputs.release_body }}
 
-            ${{ github.event.inputs.release_body }}
+            ### Merged Pull Requests
+            ${{ steps.get_prs.outputs.prs }}
 
             Published by ${{ github.actor }}
         env:
