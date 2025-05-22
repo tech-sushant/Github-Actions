@@ -33,58 +33,54 @@ jobs:
           echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
 
       - name: Fetch and categorize merged PRs
-        id: fetch_prs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -e
+
           PREVIOUS_TAG=${{ steps.get_previous_tag.outputs.previous_tag }}
           if [ -z "$PREVIOUS_TAG" ]; then
-            echo "pr_list=No previous tag found to compare PRs." >> $GITHUB_OUTPUT
+            echo "⚠️ No previous tag found. Exiting."
             exit 0
           fi
-      
+
           PREVIOUS_SHA=$(git rev-list -n 1 $PREVIOUS_TAG)
           PREVIOUS_DATE=$(git show -s --format=%cI $PREVIOUS_SHA)
           CURRENT_DATE=$(git show -s --format=%cI HEAD)
-      
+
+          echo ""
           echo "🔍 Fetching PRs merged between:"
           echo "   PREVIOUS_DATE: $PREVIOUS_DATE"
           echo "   CURRENT_DATE:  $CURRENT_DATE"
-      
+
           PRS=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" \
             --json number,title,url \
             --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
-      
+
+          echo ""
           echo "🔎 All Fetched PRs:"
           echo "$PRS"
-      
+
           ADDED=""
           FIXED=""
-      
+
           while IFS= read -r pr; do
             if echo "$pr" | grep -Eqi '\)\s+fix:'; then
-              FIXED+="$pr"$'\n'
+              FIXED+="$pr  # fix"$'\n'
             elif echo "$pr" | grep -Eqi '\)\s+feat:'; then
-              ADDED+="$pr"$'\n'
+              ADDED+="$pr  # feat"$'\n'
             fi
           done <<< "$PRS"
-      
+
+          echo ""
           echo "✅ Categorized PRs:"
           echo "----------------------------"
-      
-          BODY=""
           if [ -n "$ADDED" ]; then
             echo "$ADDED"
-            BODY="$BODY### Added"$'\n'"$ADDED"
           fi
           if [ -n "$FIXED" ]; then
             echo "$FIXED"
-            BODY="$BODY"$'\n'"### Fixed"$'\n'"$FIXED"
           fi
-          if [ -z "$BODY" ]; then
-            BODY="No categorized pull requests found."
+          if [ -z "$ADDED" ] && [ -z "$FIXED" ]; then
+            echo "No PRs matched 'feat:' or 'fix:'."
           fi
-      
-          echo "pr_list<<EOF" >> $GITHUB_OUTPUT
-          echo "$BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
