@@ -20,7 +20,7 @@ jobs:
       - name: Get current version from package.json
         id: get_version
         run: |
-          VERSION="v$(node -p 'require(\"./package.json\").version')"
+          VERSION="v$(node -p 'require("./package.json").version')"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Get previous Git tag
