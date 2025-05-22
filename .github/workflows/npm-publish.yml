@@ -54,33 +54,29 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-
           PREVIOUS_TAG=${{ steps.get_previous_tag.outputs.previous_tag }}
           if [ -z "$PREVIOUS_TAG" ]; then
             echo "pr_list=No previous tag found to compare PRs." >> $GITHUB_OUTPUT
             exit 0
           fi
-
           PREVIOUS_SHA=$(git rev-list -n 1 $PREVIOUS_TAG)
           PREVIOUS_DATE=$(git show -s --format=%cI $PREVIOUS_SHA)
           CURRENT_DATE=$(git show -s --format=%cI HEAD)
           echo "Fetching PRs merged between $PREVIOUS_DATE and $CURRENT_DATE"
-
-          PRS=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" \
+          
+          RAW_PRS=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" \
             --json number,title,url \
             --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
-
-          if [ -z "$PRS" ]; then
+      
+          if [ -z "$RAW_PRS" ]; then
             echo "pr_list=No pull requests were merged during this release." >> $GITHUB_OUTPUT
             exit 0
           fi
-
+      
           ADDED=""
           FIXED=""
-
           while IFS= read -r pr; do
             if [ -n "$pr" ]; then
-              # Extract the title removing any extra spaces after the closing bracket
               title=$(echo "$pr" | sed 's/.*] *//')
               if echo "$title" | grep -Eqi '^fix:'; then
                 FIXED+="$pr"$'\n'
@@ -88,8 +84,8 @@ jobs:
                 ADDED+="$pr"$'\n'
               fi
             fi
-          done <<< "$PRS"
-
+          done <<< "$RAW_PRS"
+      
           BODY=""
           if [ -n "$ADDED" ]; then
             BODY="$BODY### Added"$'\n'"$ADDED"
@@ -100,10 +96,14 @@ jobs:
           if [ -z "$BODY" ]; then
             BODY="No categorized pull requests found."
           fi
-
+      
+          # Include raw list as well
+          BODY="$BODY"$'\n\n'"### All Merged Pull Requests"$'\n'"$RAW_PRS"
+      
           echo "pr_list<<EOF" >> $GITHUB_OUTPUT
           echo "$BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
 
       - name: Set Git identity
         run: |
