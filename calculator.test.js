@@ -1,6 +1,6 @@
 const { add, subtract, multiply, divide, modulas, power } = require('./calculator');
 
-describe('Calculator', () => {
+describe('Calculato r', () => {
     test('adds two numbers correctly  ', () => {
         expect(add(2, 3)).toBe(5);
         expect(add(-1, 1)).toBe(0);
