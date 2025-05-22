@@ -39,6 +39,8 @@ jobs:
         id: get_version
         run: |
           VERSION="v$(node -p 'require("./package.json").version')"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
 
       - name: Get previous Git tag
         id: get_previous_tag
