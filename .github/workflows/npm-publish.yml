@@ -99,7 +99,8 @@ jobs:
 
             **Merged Pull Requests:**
             ${{ steps.pr_list.outputs.prs_output }}
-
+            ```
             Published by ${{ github.actor }}
+            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
