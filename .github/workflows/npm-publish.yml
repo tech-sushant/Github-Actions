@@ -72,7 +72,8 @@ jobs:
             echo "pr_list=No pull requests were merged during this release." >> $GITHUB_OUTPUT
             exit 0
           fi
-      
+          echo "==== Raw PR List ===="
+          echo "$RAW_PRS"
           ADDED=""
           FIXED=""
           while IFS= read -r pr; do
