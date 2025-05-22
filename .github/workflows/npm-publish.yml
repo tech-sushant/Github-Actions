@@ -63,13 +63,43 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: "Install GitHub CLI"
+        run: sudo apt-get install gh
+
+      - name: "Authenticate GitHub CLI"
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: "Fetch merged PRs between tags"
+        id: fetch_prs
+        run: |
+          PREVIOUS_TAG=${{ steps.version_info.outputs.previous }}
+          CURRENT_TAG=${{ steps.version_info.outputs.current }}
+
+          # Get the commit SHAs for the tags
+          PREVIOUS_SHA=$(git rev-list -n 1 $PREVIOUS_TAG)
+          CURRENT_SHA=$(git rev-list -n 1 $CURRENT_TAG)
+
+          # Get the merge dates for the tags
+          PREVIOUS_DATE=$(git show -s --format=%cI $PREVIOUS_SHA)
+          CURRENT_DATE=$(git show -s --format=%cI $CURRENT_SHA)
+
+          # Fetch merged PRs between the two dates
+          PR_LIST=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" --json number,title,url --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
+
+          echo "pr_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$PR_LIST" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: "Create GitHub Release"
         uses: actions/create-release@v1
         with:
           tag_name: ${{ steps.version_info.outputs.current }}
           release_name: ${{ github.event.inputs.release_title }}
           body: |
-            **Full Changelog:** https://github.com/tech-sushant/Github-Actions/compare/${{ steps.version_info.outputs.previous }}...${{ steps.version_info.outputs.current }}
+            **Merged Pull Requests:**
+            ${{ steps.fetch_prs.outputs.pr_list }}
+
+            **Full Changelog:** https://github.com/${{ github.repository }}/compare/${{ steps.version_info.outputs.previous }}...${{ steps.version_info.outputs.current }}
 
             ${{ github.event.inputs.release_body }}
 
