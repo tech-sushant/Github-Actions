@@ -48,10 +48,15 @@ jobs:
             echo "pr_list=No previous tag found to compare PRs." >> $GITHUB_OUTPUT
             exit 0
           fi
+          
           PREVIOUS_SHA=$(git rev-list -n 1 $PREVIOUS_TAG)
           PREVIOUS_DATE=$(git show -s --format=%cI $PREVIOUS_SHA)
           CURRENT_DATE=$(git show -s --format=%cI HEAD)
           echo "Fetching PRs merged between $PREVIOUS_DATE and $CURRENT_DATE"
+          
+          # Initialize variables
+          ADDED=""
+          FIXED=""
           
           # Fetch PRs
           PRS=$(gh pr list --state merged --search "merged:${PREVIOUS_DATE}..${CURRENT_DATE}" \
@@ -59,49 +64,41 @@ jobs:
             --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
           
           # Check if any PRs were found
-          if [ -z "$PRS" ] || [ "$PRS" = "" ]; then
+          if [ -z "$PRS" ]; then
             echo "pr_list=No pull requests were merged during this release." >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          # Categorize PRs
-          ADDED=""
-          FIXED=""
-          
+          # Process each PR
           while IFS= read -r pr; do
             if [ -n "$pr" ]; then
-              title=$(echo "$pr" | cut -d']' -f2 | cut -d':' -f2- | xargs)
-              if [[ "$title" == fix* ]] || [[ "$title" == Fix* ]] || [[ "$title" == FIX* ]]; then
-                FIXED+="$pr"$'\n'
+              # Extract title after the closing bracket and URL
+              title=$(echo "$pr" | cut -d']' -f2- | sed 's/^ *//')
+              
+              # Check if it's a fix-related PR
+              if echo "$title" | grep -qi "^fix"; then
+                FIXED="$FIXED$pr"$'\n'
               else
-                ADDED+="$pr"$'\n'
+                ADDED="$ADDED$pr"$'\n'
               fi
             fi
           done <<< "$PRS"
           
-          # Build the body with proper handling of empty sections
+          # Build the body
           BODY=""
-          HAS_CONTENT=false
-          
           if [ -n "$ADDED" ] && [ "$ADDED" != $'\n' ]; then
-            BODY+="### Added"$'\n'"$ADDED"$'\n'
-            HAS_CONTENT=true
+            BODY="$BODY### Added"$'\n'"$ADDED"$'\n'
           fi
-          
           if [ -n "$FIXED" ] && [ "$FIXED" != $'\n' ]; then
-            BODY+="### Fixed"$'\n'"$FIXED"$'\n'
-            HAS_CONTENT=true
+            BODY="$BODY### Fixed"$'\n'"$FIXED"$'\n'
           fi
           
-          # If no categorized PRs, show all PRs under a general section
-          if [ "$HAS_CONTENT" = false ]; then
-            if [ -n "$PRS" ]; then
-              BODY="### Changes"$'\n'"$PRS"$'\n'
-            else
-              BODY="No pull requests were merged during this release."
-            fi
+          # If no categorized content, show message
+          if [ -z "$BODY" ]; then
+            BODY="No pull requests were merged during this release."
           fi
           
+          # Output the result
           echo "pr_list<<EOF" >> $GITHUB_OUTPUT
           echo "$BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -127,7 +124,6 @@ jobs:
             
             ${{ steps.fetch_prs.outputs.pr_list }}
             
-            ---
             Published by ${{ github.actor }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
