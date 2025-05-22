@@ -1,0 +1,56 @@
+name: "Echo Release Body"
+description: "Fetches merged PRs since the last tag and prints a categorized release body"
+runs:
+  using: "composite"
+  steps:
+    - name: Echo Release Body
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        set -e
+
+        LAST_TAG=$(git tag --sort=-creatordate | grep '^v' | head -n 1)
+        if [ -z "$LAST_TAG" ]; then
+          echo "⚠️ No previous tag found."
+          exit 0
+        fi
+
+        FROM_SHA=$(git rev-list -n 1 $LAST_TAG)
+        FROM_DATE=$(git show -s --format=%cI $FROM_SHA)
+        TO_DATE=$(git show -s --format=%cI HEAD)
+
+        echo "Fetching PRs merged between $FROM_DATE and $TO_DATE"
+
+        RAW_PRS=$(gh pr list --state merged --search "merged:${FROM_DATE}..${TO_DATE}" \
+          --json number,title,url \
+          --jq '.[] | "- [#\(.number)](\(.url)) \(.title)"')
+
+        if [ -z "$RAW_PRS" ]; then
+          echo "ℹ️ No pull requests found between last tag and HEAD."
+          exit 0
+        fi
+
+        ADDED=""
+        FIXED=""
+
+        while IFS= read -r pr; do
+          if echo "$pr" | grep -iq "fix"; then
+            FIXED+="$pr"$'\n'
+          else
+            ADDED+="$pr"$'\n'
+          fi
+        done <<< "$RAW_PRS"
+
+        echo ""
+        echo "========== 🚀 Release Body Preview =========="
+
+        if [ -n "$ADDED" ]; then
+          echo -e "### Added\n$ADDED"
+        fi
+
+        if [ -n "$FIXED" ]; then
+          echo -e "\n### Fixed\n$FIXED"
+        fi
+
+        echo "============================================="
