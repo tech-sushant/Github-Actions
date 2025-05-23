@@ -2,14 +2,6 @@ name: "Release New Version"
 
 on:
   workflow_dispatch:
-    inputs:
-      release_title:
-        description: "Title for the release"
-        required: true
-      release_body:
-        description: "Additional notes (optional)"
-        required: false
-        default: ""
 
 permissions:
   contents: write
@@ -18,24 +10,24 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: "Checkout source code"
         uses: actions/checkout@v2
         with:
           fetch-depth: 0
 
-      - name: Set up Node.js
+      - name: "Set up Node.js"
         uses: actions/setup-node@v3
         with:
           node-version: 22.x
           registry-url: "https://registry.npmjs.org/"
 
-      - name: Install dependencies
+      - name: "Install dependencies"
         run: npm ci
 
-      - name: Build project
+      - name: "Create build"
         run: npm run build
 
-      - name: Get current version from package.json
+      - name: "Get version from package.json"
         id: get_version
         run: |
           VERSION="v$(node -p 'require("./package.json").version')"
@@ -73,9 +65,6 @@ jobs:
             exit 0
           fi
       
-          echo "==== Raw PR List ===="
-          echo "$RAW_PRS"
-      
           ADDED=""
           FIXED=""
           while IFS= read -r pr; do
@@ -98,30 +87,28 @@ jobs:
           echo "$BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Set Git identity
+      - name: "Set Git user name and email"
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
-      - name: Create Git tag
+      - name: "Create Git tag for version"
         run: git tag ${{ steps.get_version.outputs.version }}
 
-      - name: Push Git tag
+      - name: "Push tag to origin"
         run: git push origin ${{ steps.get_version.outputs.version }}
 
-      - name: Publish to NPM
+      - name: "Publish to NPM"
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Create GitHub Release
+      - name: "Create GitHub Release"
         uses: actions/create-release@v1
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
-          release_name: ${{ github.event.inputs.release_title }}
+          release_name: ${{ steps.get_version.outputs.version }}
           body: |
-            ${{ github.event.inputs.release_body }}
-
             ${{ steps.fetch_prs.outputs.pr_list }}
 
             Published by ${{ github.actor }}
